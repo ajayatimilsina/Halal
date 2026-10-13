@@ -1,10 +1,9 @@
 {
   "database": { "rules": "database.rules.json" },
-  "functions": { "source": "functions" },
   "hosting": {
     "public": ".",
-    "ignore": ["firebase.json", ".*", "**/node_modules/**", "functions/index.js", "functions/package*.json", "functions/.env*", "tests/**", "package*.json", "playwright*.config.js", "README.md", "database.rules.json", "*-debug.log", "test-results/**", "playwright-report/**"],
+    "ignore": ["firebase.json", ".*", "**/node_modules/**", "functions/**", "tests/**", "package*.json", "playwright*.config.js", "README.md", "database.rules.json", "*-debug.log", "test-results/**", "playwright-report/**"],
     "headers": [{ "source": "**", "headers": [{ "key": "Referrer-Policy", "value": "no-referrer" }, { "key": "X-Content-Type-Options", "value": "nosniff" }] }]
   },
-  "emulators": { "auth": { "port": 9099 }, "database": { "port": 9000 }, "functions": { "port": 5001 }, "hosting": { "port": 8080 }, "ui": { "enabled": true } }
+  "emulators": { "auth": { "port": 9099 }, "database": { "port": 9000 }, "hosting": { "port": 8080 }, "ui": { "enabled": true } }
 }

@@ -1,16 +1,99 @@
 {
   "rules": {
-    ".read": false, ".write": false,
+    ".read": "auth != null && auth.uid === 'gwf3oOR6wkZv6eI3tfYz9yKivzg2'",
+    ".write": "auth != null && auth.uid === 'gwf3oOR6wkZv6eI3tfYz9yKivzg2'",
     "menu": { ".read": true },
-    "menuRevision": { ".read": "auth != null && auth.uid === 'OWNER_UID_NOT_CONFIGURED'" },
-    "stock": { ".read": true },
+    "stock": {
+      ".read": true,
+      "$mid": { "qty": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" } }
+    },
     "settings": {
       "shipping": { ".read": true },
       "payment": { ".read": true }
     },
+    "customerRequests": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$id": {
+          ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists()",
+          ".validate": "newData.hasChildren(['id','signature']) && newData.child('id').val() === $id && newData.child('signature').isString() && newData.child('signature').val().matches(/^[a-f0-9]{64}$/) && (data.exists() || newData.parent().parent().parent().child('orders').child($id).child('ownerUid').val() === $uid)",
+          "id": { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "signature": { ".validate": "newData.isString() && newData.val().length === 64" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
     "orders": {
-      ".read": "auth != null && auth.uid === 'OWNER_UID_NOT_CONFIGURED'",
-      ".indexOn": ["t", "status"]
+      ".indexOn": ["t", "status"],
+      "$id": {
+        ".read": "auth != null && data.child('ownerUid').val() === auth.uid",
+        ".write": "auth != null && !data.exists() && !root.child('customerRequests').child(auth.uid).child($id).exists() && newData.parent().parent().child('customerRequests').child(auth.uid).child($id).child('id').val() === $id && newData.child('ownerUid').val() === auth.uid && newData.child('status').val() === 'new' && newData.child('stockStatus').val() === 'pending' && newData.child('payment/status').val() === 'unpaid' && newData.child('emailSent').val() === false",
+        ".validate": "newData.hasChildren(['id','t','ownerUid','customer','items','itemsTotal','shipping','total','status','payment','emailSent']) && newData.child('id').val() === $id && (newData.child('status').val() !== 'shipped' && newData.child('status').val() !== 'done' || newData.child('payment/status').val() === 'paid' && (!newData.child('stockStatus').exists() || newData.child('stockStatus').val() === 'applied')) && (!data.exists() || newData.child('status').val() === data.child('status').val() || data.child('status').val() === 'new' && newData.child('status').val() === 'packing' || data.child('status').val() === 'packing' && newData.child('status').val() === 'shipped' || data.child('status').val() === 'shipped' && newData.child('status').val() === 'done')",
+        "id": { ".validate": "newData.val() === $id" },
+        "ownerUid": { ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())" },
+        "t": { ".validate": "newData.isNumber() && (data.exists() && newData.val() === data.val() || !data.exists() && newData.val() === now)" },
+        "receiptTokenHash": { ".validate": "newData.isString() && newData.val().length === 64" },
+        "stockStatus": { ".validate": "newData.val() === 'pending' || newData.val() === 'shortage' || newData.val() === 'applied'" },
+        "stockProcessedAt": { ".validate": "newData.isNumber() && newData.parent().child('stockStatus').val() === 'applied'" },
+        "status": { ".validate": "newData.val() === 'new' || newData.val() === 'packing' || newData.val() === 'shipped' || newData.val() === 'done'" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "shippedAt": { ".validate": "newData.isNumber()" },
+        "tracking": { ".validate": "newData.isString() && newData.val().length <= 100" },
+        "customer": {
+          ".validate": "newData.hasChildren(['name','phone','email','postal','address','note'])",
+          "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
+          "phone": { ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 25" },
+          "email": { ".validate": "newData.isString() && newData.val().length > 3 && newData.val().length <= 500" },
+          "postal": { ".validate": "newData.isString() && newData.val().length >= 7 && newData.val().length <= 8" },
+          "address": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
+          "note": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+          "$other": { ".validate": false }
+        },
+        "items": {
+          ".validate": "newData.hasChild('0')",
+          "$index": {
+            ".validate": "$index.matches(/^(0|[1-9]|[1-4][0-9])$/) && newData.hasChildren(['mid','n','p','q','option','optionIndex']) && (data.exists() || root.child('catalog').child(newData.child('mid').val()).exists() && root.child('catalog').child(newData.child('mid').val()).child('out').val() !== true && (!root.child('stock').child(newData.child('mid').val()).exists() || root.child('stock').child(newData.child('mid').val()).child('qty').val() >= newData.child('q').val()) && newData.child('n').val() === root.child('catalog').child(newData.child('mid').val()).child('n').val() && (newData.child('optionIndex').val() === -1 && newData.child('p').val() === root.child('catalog').child(newData.child('mid').val()).child('p').val() && newData.child('option').val() === '' || newData.child('optionIndex').val() >= 0 && root.child('catalog').child(newData.child('mid').val()).child('opts').child(newData.child('optionIndex').val() + '').exists() && newData.child('p').val() === root.child('catalog').child(newData.child('mid').val()).child('p').val() + root.child('catalog').child(newData.child('mid').val()).child('opts').child(newData.child('optionIndex').val() + '').child('p').val() && newData.child('option').val() === root.child('catalog').child(newData.child('mid').val()).child('opts').child(newData.child('optionIndex').val() + '').child('n').val()))",
+            "mid": { ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())" },
+            "n": { ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())" },
+            "p": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && (!data.exists() || newData.val() === data.val())" },
+            "q": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 99 && newData.val() % 1 === 0 && (!data.exists() || newData.val() === data.val())" },
+            "optionIndex": { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() % 1 === 0 && (!data.exists() || newData.val() === data.val())" },
+            "option": { ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())" },
+            "$other": { ".validate": false }
+          }
+        },
+        "itemsTotal": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000 && newData.val() % 1 === 0" },
+        "total": { ".validate": "newData.isNumber() && newData.val() === newData.parent().child('itemsTotal').val() + newData.parent().child('shipping/fee').val()" },
+        "shipping": {
+          ".validate": "newData.hasChildren(['area','fee','mode'])",
+          "fee": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000 && newData.val() % 1 === 0" },
+          "area": { ".validate": "newData.isString() && newData.val().length <= 100" },
+          "mode": { ".validate": "newData.val() === '着払い' || newData.val() === '送料無料' || newData.val() === '名古屋配達'" }
+        },
+        "payment": {
+          ".validate": "newData.hasChildren(['method','status','instructions'])",
+          "method": { ".validate": "(newData.val() === 'PayPay' || newData.val() === 'PayPal' && (data.exists() || root.child('settings/payment/paypalQr').exists())) && (!data.exists() || newData.val() === data.val())" },
+          "instructions": {
+            ".validate": "newData.hasChildren(['paypayUrl'])",
+            "paypayUrl": { ".validate": "newData.isString() && newData.val().length <= 500" },
+            "paypayName": { ".validate": "newData.isString() && newData.val().length <= 100" },
+            "paypalName": { ".validate": "newData.isString() && newData.val().length <= 100" },
+            "paypalUrl": { ".validate": "newData.isString() && newData.val().length <= 500" },
+            "paypalQr": { ".validate": "newData.isString() && newData.val().length <= 600000" },
+            "$other": { ".validate": false }
+          },
+          "status": {
+            ".write": "auth != null && root.child('orders').child($id).child('ownerUid').val() === auth.uid && (!root.child('orders').child($id).child('stockStatus').exists() || root.child('orders').child($id).child('stockStatus').val() === 'applied') && data.val() === 'unpaid' && newData.val() === 'reported'",
+            ".validate": "newData.val() === 'unpaid' || newData.val() === 'reported' || newData.val() === 'paid'"
+          },
+          "reportedAt": { ".write": "auth != null && root.child('orders').child($id).child('ownerUid').val() === auth.uid && !data.exists() && newData.val() === now", ".validate": "newData.isNumber() && (newData.parent().child('status').val() === 'reported' || newData.parent().child('status').val() === 'paid')" },
+          "paidAt": { ".validate": "newData.isNumber() && newData.parent().child('status').val() === 'paid'" },
+          "$other": { ".validate": false }
+        },
+        "emailSent": { ".write": "auth != null && root.child('orders').child($id).child('ownerUid').val() === auth.uid && data.val() !== true && newData.isBoolean()", ".validate": "newData.isBoolean()" },
+        "reportEmailSent": { ".write": "auth != null && root.child('orders').child($id).child('ownerUid').val() === auth.uid && data.val() !== true && newData.isBoolean()", ".validate": "newData.isBoolean()" },
+        "$other": { ".validate": false }
+      }
     }
   }
 }

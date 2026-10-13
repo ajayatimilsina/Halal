@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shippingFor, availability, buildOrder, canTransition, validateMenu } from '../shop-domain.js';
+import { shippingFor, availability, buildOrder, canTransition, validateMenu, settlePendingOrder } from '../shop-domain.js';
 const customer = { name: 'Test', phone: '09012345678', email: 'test@example.com', postal: '460-0001', address: '名古屋市中区', note: '' };
 const menu = [{ id: 'mutton', n: 'Mutton meat', cat: 'Mutton / ミート', p: 1500, img: '', out: false, opts: [{ n: 'Large', p: 200 }] }];
 test('shipping threshold and nationwide collect', () => {
@@ -29,4 +29,22 @@ test('shipping requires paid and flow cannot skip', () => {
 test('invalid menu price and duplicate IDs fail', () => {
   assert.throws(() => validateMenu([{ ...menu[0], p: -1 }]));
   assert.throws(() => validateMenu([menu[0], menu[0]]));
+});
+test('staff settlement applies inventory once and corrects submitted totals', () => {
+  const root = { stock: { mutton: { qty: 3 } }, orders: { order: { stockStatus: 'pending', customer, items: [{ mid: 'mutton', p: 1500, q: 2 }], total: 1 } } };
+  assert.equal(settlePendingOrder(root, 'order', 123), true);
+  assert.equal(root.stock.mutton.qty, 1);
+  assert.equal(root.orders.order.total, 3000);
+  assert.equal(settlePendingOrder(root, 'order', 124), false);
+  assert.equal(root.stock.mutton.qty, 1);
+});
+test('staff settlement does not partially deduct a shortage order', () => {
+  const root = { stock: { mutton: { qty: 1 }, rice: { qty: 10 } }, orders: { order: { stockStatus: 'pending', customer, items: [{ mid: 'mutton', p: 1500, q: 2 }, { mid: 'rice', p: 1000, q: 2 }] } } };
+  assert.equal(settlePendingOrder(root, 'order', 123), true);
+  assert.equal(root.orders.order.stockStatus, 'shortage');
+  assert.equal(root.stock.rice.qty, 10);
+  assert.equal(settlePendingOrder(root, 'order', 124), false);
+  root.stock.mutton.qty = 2;
+  assert.equal(settlePendingOrder(root, 'order', 125), true);
+  assert.equal(root.stock.rice.qty, 8);
 });

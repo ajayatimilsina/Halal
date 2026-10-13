@@ -4,8 +4,13 @@ const rootUrl = 'http://127.0.0.1:9000/.json?ns=demo-kiranahibino';
 const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
 const ownerCustomToken = `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ uid: 'OWNER_UID_NOT_CONFIGURED', sub: 'test', iss: 'test', aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 })}.`;
 async function seed() {
+  const rules = JSON.parse(await readFile(new URL('../database.rules.json', import.meta.url), 'utf8'));
+  for (const field of ['.read', '.write']) rules.rules[field] = "auth != null && auth.uid === 'OWNER_UID_NOT_CONFIGURED'";
+  const rulesResult = await fetch('http://127.0.0.1:9000/.settings/rules.json?ns=demo-kiranahibino', { method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' }, body: JSON.stringify(rules) });
+  if (!rulesResult.ok) throw new Error(await rulesResult.text());
   const image = `data:image/jpeg;base64,${(await readFile(new URL('../assets/meat.jpg', import.meta.url))).toString('base64')}`;
   const data = { menu: [{ id: 'mutton', n: 'Mutton meat', cat: 'Mutton / ミート', p: 1500, img: image, out: false, opts: [{ n: 'Large', p: 200 }] }], stock: { mutton: { qty: 10 } }, settings: { shipping: { threshold: 10000, fee: 500, addressTerms: ['名古屋市'] } } };
+  data.catalog = { mutton: { n: 'Mutton meat', p: 1500, out: false, opts: [{ n: 'Large', p: 200 }] } };
   const result = await fetch(rootUrl, { method: 'PUT', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   if (!result.ok) throw new Error(await result.text());
 }
@@ -15,7 +20,6 @@ async function staff(page, route) {
     const gateway = await import('/firebase-sync.js'); await gateway.customerAuth();
     const authSdk = await import('https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js');
     await authSdk.signInWithCustomToken(authSdk.getAuth(), token);
-    sessionStorage.setItem('staffGate', 'true');
   }, ownerCustomToken);
   await page.goto(`/${route}.html?emulator=1`);
 }
@@ -29,6 +33,11 @@ test('customer checkout, payment QR, reporting and staff paid-only shipping', as
   await page.getByRole('button', { name: '注文を確定して支払いへ' }).click();
   await expect(page.locator('.amount')).toHaveText('￥2,000');
   await expect(page.locator('#message')).toContainText('店舗通知メールは再送待ち');
+  await expect(page.locator('#reported')).toHaveText('在庫確認待ち');
+  await expect(page.locator('.qr')).toHaveCount(0);
+  const ownerContext = await browser.newContext(); const ownerPage = await ownerContext.newPage();
+  await staff(ownerPage, 'orders');
+  await expect(ownerPage.locator('.order')).toHaveCount(1);
   await expect.poll(() => page.locator('.qr').evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
   await page.setViewportSize({ width: 360, height: 800 });
   await page.screenshot({ path: 'test-results/payment-mobile.png', fullPage: true });
@@ -36,9 +45,6 @@ test('customer checkout, payment QR, reporting and staff paid-only shipping', as
   await page.getByRole('button', { name: '支払いました', exact: true }).click();
   await expect(page.locator('#reported')).toHaveText('支払い報告あり');
   await page.reload(); await expect(page.locator('#reported')).toHaveText('支払い報告あり');
-  const ownerContext = await browser.newContext(); const ownerPage = await ownerContext.newPage();
-  await staff(ownerPage, 'orders');
-  await expect(ownerPage.locator('.order')).toHaveCount(1);
   await ownerPage.route('https://cdn.jsdelivr.net/npm/@emailjs/browser@4.4.1/+esm', route => route.fulfill({ contentType: 'text/javascript', body: 'export async function send(){return {status:200,text:"mocked"};}' }));
   await ownerPage.evaluate(async () => { const { EMAILJS } = await import('/firebase-sync.js'); Object.assign(EMAILJS, { serviceId: 'test', templateId: 'test', publicKey: 'test' }); });
   await ownerPage.getByRole('button', { name: 'メールを再送', exact: true }).click();

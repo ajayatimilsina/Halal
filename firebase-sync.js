@@ -1,4 +1,5 @@
 import { DEFAULT_PAYMENT, DEFAULT_SHIPPING } from './shop-domain.js';
+import { runDatabaseCommand } from './database-commands.js';
 
 export const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyAw5fh-mNu72irHOszXTpXmXzaHWeSXG3E',
@@ -10,12 +11,13 @@ export const FIREBASE_CONFIG = {
   appId: '1:59402858023:web:678654a369c891a34a2802',
   measurementId: 'G-W2KBY6L01H'
 };
-export const OWNER_UID = 'OWNER_UID_NOT_CONFIGURED';
+export const OWNER_UID = 'gwf3oOR6wkZv6eI3tfYz9yKivzg2';
 export const EMAILJS = { serviceId: '', templateId: '', publicKey: '', ownerEmail: 'ajayatimilsina1@gmail.com' };
 export const APP_CHECK_SITE_KEY = '';
 export const SHOP_NAME = 'ハラール食料品店';
 const emulator = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).get('emulator') === '1';
 export const configured = Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.appId) || emulator;
+export const commandsReady = configured;
 export const previewMenu = [{ id: 'mutton', cat: 'Mutton / ミート', n: 'Mutton meat', p: 1500, img: './assets/meat.jpg', out: false, opts: [{ n: '500g 追加', p: 750 }] }];
 let services;
 let initPromise;
@@ -23,20 +25,18 @@ async function initialize() {
   if (!configured) throw new Error('Firebase設定が未完了です。商品プレビューのみ表示しています。');
   if (!initPromise) initPromise = (async () => {
     const base = 'https://www.gstatic.com/firebasejs/11.10.0/';
-    const [appSdk, databaseSdk, authSdk, functionsSdk] = await Promise.all(['firebase-app.js', 'firebase-database.js', 'firebase-auth.js', 'firebase-functions.js'].map(file => import(base + file)));
+    const [appSdk, databaseSdk, authSdk] = await Promise.all(['firebase-app.js', 'firebase-database.js', 'firebase-auth.js'].map(file => import(base + file)));
     const config = emulator ? { ...FIREBASE_CONFIG, apiKey: 'demo-key', appId: 'demo-app', projectId: 'demo-kiranahibino', authDomain: 'demo-kiranahibino.firebaseapp.com', databaseURL: 'https://demo-kiranahibino.firebaseio.com' } : FIREBASE_CONFIG;
     const app = appSdk.initializeApp(config);
     const db = databaseSdk.getDatabase(app);
     const auth = authSdk.getAuth(app);
-    const functions = functionsSdk.getFunctions(app, 'asia-northeast1');
-    if (emulator) { databaseSdk.connectDatabaseEmulator(db, '127.0.0.1', 9000); authSdk.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true }); functionsSdk.connectFunctionsEmulator(functions, '127.0.0.1', 5001); }
-    else {
-      if (!APP_CHECK_SITE_KEY) throw new Error('App Check設定が未完了です。');
+    if (emulator) { databaseSdk.connectDatabaseEmulator(db, '127.0.0.1', 9000); authSdk.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true }); }
+    else if (APP_CHECK_SITE_KEY) {
       const appCheck = await import(base + 'firebase-app-check.js');
       appCheck.initializeAppCheck(app, { provider: new appCheck.ReCaptchaV3Provider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
     }
     await auth.authStateReady();
-    services = { db, auth, functions, databaseSdk, authSdk, functionsSdk };
+    services = { db, auth, databaseSdk, authSdk };
     return services;
   })();
   return initPromise;
@@ -48,7 +48,12 @@ export function watch(path, callback, onError = () => {}) {
     const examples = { menu: previewMenu, stock: {}, 'settings/shipping': DEFAULT_SHIPPING, 'settings/payment': { ...DEFAULT_PAYMENT, paypalQr: './image.jpg' }, orders: {}, menuRevision: 0 };
     queueMicrotask(() => { if (!cancelled) callback(structuredClone(examples[path] ?? null)); });
   } else initialize().then(service => {
-    if (!cancelled) unsubscribe = service.databaseSdk.onValue(service.databaseSdk.ref(service.db, path), snapshot => callback(snapshot.val()), onError);
+    if (!cancelled) unsubscribe = service.databaseSdk.onValue(service.databaseSdk.ref(service.db, path), snapshot => {
+      const value = snapshot.val();
+      if (path === 'orders' && value) for (const order of Object.values(value)) order.items = Object.values(order.items || {});
+      else if (path.startsWith('orders/') && value) value.items = Object.values(value.items || {});
+      callback(value);
+    }, onError);
   }).catch(onError);
   return () => { cancelled = true; unsubscribe(); };
 }
@@ -62,15 +67,32 @@ export async function staffLogin() {
   await service.authSdk.setPersistence(service.auth, service.authSdk.browserSessionPersistence);
   let user = service.auth.currentUser;
   if (!user || user.isAnonymous) user = (await service.authSdk.signInWithPopup(service.auth, new service.authSdk.GoogleAuthProvider())).user;
-  if (user.uid !== OWNER_UID) { await service.authSdk.signOut(service.auth); throw new Error('登録された管理者アカウントでログインしてください。'); }
+  const expectedUid = emulator ? 'OWNER_UID_NOT_CONFIGURED' : OWNER_UID;
+  if (user.uid !== expectedUid) { await service.authSdk.signOut(service.auth); throw new Error('登録された管理者アカウントでログインしてください。'); }
   return user;
 }
 export async function logout() { if (services) await services.authSdk.signOut(services.auth); }
 export async function command(action, data = {}) {
   const service = await initialize();
   if (!service.auth.currentUser) await customerAuth();
-  const result = await service.functionsSdk.httpsCallable(service.functions, 'shopCommand')({ ...data, action });
-  return result.data;
+  return runDatabaseCommand(service, action, data, emulator ? 'OWNER_UID_NOT_CONFIGURED' : OWNER_UID);
+}
+export async function restoreStaffSession() {
+  const service = await initialize();
+  return Boolean(service.auth.currentUser && !service.auth.currentUser.isAnonymous && service.auth.currentUser.uid === (emulator ? 'OWNER_UID_NOT_CONFIGURED' : OWNER_UID));
+}
+export function startOrderProcessing(onError) {
+  let stopped = false; let running = false; let queued = false; let unsubscribe = () => {};
+  initialize().then(service => {
+    if (stopped) return;
+    const process = async () => {
+      if (running) { queued = true; return; } running = true;
+      try { await command('processPendingOrders'); } catch (error) { onError(error); }
+      finally { running = false; if (queued && !stopped) { queued = false; process(); } }
+    };
+    unsubscribe = service.databaseSdk.onValue(service.databaseSdk.ref(service.db), () => { if (!stopped) process(); }, onError);
+  }).catch(onError);
+  return () => { stopped = true; unsubscribe(); };
 }
 let lastEmailAt = 0;
 export async function sendOrderEmail(order, event = 'new') {

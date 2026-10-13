@@ -1,4 +1,4 @@
-import { watch, command, configured, customerAuth, sendOrderEmail } from './firebase-sync.js';
+import { watch, command, configured, commandsReady, customerAuth, sendOrderEmail } from './firebase-sync.js';
 import { DEFAULT_PAYMENT, DEFAULT_SHIPPING, availability, shippingFor, validateCustomer, yen } from './shop-domain.js';
 import { mountShell, escapeHtml as esc, storage, message, attempt, imageSource, safeUrl, icons, randomToken, paymentLabels } from './ui.js';
 
@@ -9,6 +9,8 @@ if (!Array.isArray(cart)) cart = [];
 cart = cart.filter(row => typeof row.mid === 'string' && Number.isInteger(row.option) && Number.isInteger(row.q) && row.q > 0 && row.q <= 99);
 const chosen = new Map();
 let paymentToken = '';
+let receiptStop;
+let watchedReceipt = '';
 let pendingOrder = storage.get('pendingOrder');
 let menuLoaded = false;
 const loadedPaths = new Set();
@@ -29,7 +31,8 @@ function drawCart() {
   }).join('') : '<p class="empty">カートは空です。</p>';
   document.querySelector('#totals').innerHTML = `<div><span>商品合計</span><strong>${yen(total)}</strong></div><div><span>配送料</span><span>${customer().address ? (delivery.mode === '着払い' ? '着払い（到着時）' : yen(delivery.fee)) : '住所入力後に確定'}</span></div><div class="grand"><span>お支払い合計</span><span>${yen(total + delivery.fee)}</span></div>`;
   document.querySelector('#shipping-rule').textContent = `名古屋市：${yen(state.shipping.threshold)}以上で送料無料。未満は${yen(state.shipping.fee)}。全国：着払い（サイトでの送料請求なし）。`;
-  document.querySelector('#submit-order').disabled = !configured || !cart.length || state.busy;
+  document.querySelector('#submit-order').disabled = !commandsReady || !cart.length || state.busy;
+  document.querySelector('#submit-order').textContent = commandsReady ? '注文を確定して支払いへ' : '注文受付の設定待ち';
   icons();
 }
 function draw() {
@@ -90,12 +93,10 @@ form.onsubmit = event => {
       pendingOrder = pending;
       storage.set('pendingOrder', pending);
       const input = { ...payload, requestId: pending.requestId, token: pending.token };
-      let order;
-      try { order = await command('createOrder', input); }
-      catch (error) { if (!['functions/deadline-exceeded', 'functions/unavailable'].includes(error.code)) throw error; order = await command('createOrder', input); }
+      const order = await command('createOrder', input);
       state.receipt = order; paymentToken = pending.token;
       storage.set(`receipt:${order.id}`, paymentToken); storage.remove('pendingOrder'); pendingOrder = null;
-      location.hash = new URLSearchParams({ pay: order.id, token: paymentToken }).toString();
+      location.hash = new URLSearchParams({ pay: order.id }).toString();
       cart = []; saveCart(); form.reset(); drawPayment();
       try { await sendOrderEmail(order); message('注文を受け付けました。お支払いをお願いします。'); }
       catch { message('注文は保存されました。店舗通知メールは再送待ちです。', true); }
@@ -104,18 +105,24 @@ form.onsubmit = event => {
 };
 function drawPayment() {
   const order = state.receipt; if (!order) return;
+  if (configured && watchedReceipt !== order.id) {
+    watchedReceipt = order.id; receiptStop?.();
+    receiptStop = watch(`orders/${order.id}`, value => { if (value) { state.receipt = value; drawPayment(); } }, error => message(error.message, true));
+  }
+  const ready = !order.stockStatus || order.stockStatus === 'applied';
+  const waiting = order.stockStatus === 'shortage' ? '在庫不足のため店舗からの連絡をお待ちください。まだ送金しないでください。' : '店舗で在庫を確認しています。確認完了後にお支払いください。';
   const instructions = order.payment.instructions || state.payment;
   const method = order.payment.method;
   let qr = '';
   const paypayUrl = safeUrl(instructions.paypayUrl, 'qr.paypay.ne.jp');
-  if (method === 'PayPay' && paypayUrl) {
+  if (ready && method === 'PayPay' && paypayUrl) {
     try { const code = globalThis.qrcode(0, 'M'); code.addData(paypayUrl); code.make(); qr = code.createDataURL(6, 8); }
     catch { qr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(paypayUrl)}`; }
-  } else qr = imageSource(instructions.paypalQr);
+  } else qr = ready && method === 'PayPal' ? imageSource(instructions.paypalQr) : '';
   const paypalUrl = safeUrl(instructions.paypalUrl, 'paypal.me');
   document.querySelector('#shop').hidden = true;
   const view = document.querySelector('#payment-view'); view.hidden = false;
-  view.innerHTML = `<span class="badge ${esc(order.payment.status)}">${esc(paymentLabels[order.payment.status])}</span><h2>注文 #${esc(order.id)}</h2><p class="amount">${yen(order.total)}</p><p>${esc(method)}で ${yen(order.total)} を送金してください。<br>メッセージに注文番号 #${esc(order.id)} を入力してください。</p>${qr ? `<img class="qr" src="${esc(qr)}" alt="${esc(method)}支払いQR">` : '<p class="empty">支払い設定を店舗にご確認ください。</p>'}<strong>${esc(method === 'PayPay' ? instructions.paypayName : instructions.paypalName)}</strong><div class="actions">${method === 'PayPay' && paypayUrl ? `<a class="button primary" href="${esc(paypayUrl)}" target="_blank" rel="noopener noreferrer">PayPayを開く <i data-lucide="external-link"></i></a>` : ''}${method === 'PayPal' && qr ? `<a class="button" href="${esc(qr)}" download="paypal-qr.jpg"><i data-lucide="download"></i>QRを保存</a>` : ''}${method === 'PayPal' && paypalUrl ? `<a class="button primary" href="${esc(paypalUrl)}" target="_blank" rel="noopener noreferrer">PayPal.meを開く</a>` : ''}</div><p class="muted">${esc(order.shipping.mode)}${order.shipping.mode === '着払い' ? '：送料は到着時に配送会社へお支払いください。' : ''}</p><div class="actions"><button id="reported" class="primary" ${order.payment.status !== 'unpaid' ? 'disabled' : ''}>${order.payment.status === 'unpaid' ? '支払いました' : esc(paymentLabels[order.payment.status])}</button><button id="refresh-receipt" class="icon-button" title="支払い状況を更新" aria-label="支払い状況を更新"><i data-lucide="refresh-cw"></i></button></div><a href="./customer.html${location.search}">買い物に戻る</a>`;
+  view.innerHTML = `<span class="badge ${esc(order.payment.status)}">${ready ? esc(paymentLabels[order.payment.status]) : '在庫確認待ち'}</span><h2>注文 #${esc(order.id)}</h2>${!ready ? '<small>仮合計</small>' : ''}<p class="amount">${yen(order.total)}</p><p>${ready ? `${esc(method)}で ${yen(order.total)} を送金してください。<br>メッセージに注文番号 #${esc(order.id)} を入力してください。` : esc(waiting)}</p>${qr ? `<img class="qr" src="${esc(qr)}" alt="${esc(method)}支払いQR">` : ''}<strong>${ready ? esc(method === 'PayPay' ? instructions.paypayName : instructions.paypalName) : ''}</strong><div class="actions">${ready && method === 'PayPay' && paypayUrl ? `<a class="button primary" href="${esc(paypayUrl)}" target="_blank" rel="noopener noreferrer">PayPayを開く <i data-lucide="external-link"></i></a>` : ''}${method === 'PayPal' && qr ? `<a class="button" href="${esc(qr)}" download="paypal-qr.jpg"><i data-lucide="download"></i>QRを保存</a>` : ''}${ready && method === 'PayPal' && paypalUrl ? `<a class="button primary" href="${esc(paypalUrl)}" target="_blank" rel="noopener noreferrer">PayPal.meを開く</a>` : ''}</div><p class="muted">${esc(order.shipping.mode)}${order.shipping.mode === '着払い' ? '：送料は到着時に配送会社へお支払いください。' : ''}</p><div class="actions"><button id="reported" class="primary" ${!ready || order.payment.status !== 'unpaid' ? 'disabled' : ''}>${!ready ? '在庫確認待ち' : order.payment.status === 'unpaid' ? '支払いました' : esc(paymentLabels[order.payment.status])}</button><button id="refresh-receipt" class="icon-button" title="支払い状況を更新" aria-label="支払い状況を更新"><i data-lucide="refresh-cw"></i></button></div><a href="./customer.html${location.search}">買い物に戻る</a>`;
   document.querySelector('#reported').onclick = event => attempt(async () => {
     state.receipt = await command('reportPayment', { id: order.id, token: paymentToken }); drawPayment();
     message('支払い報告を受け付けました。店舗の確認をお待ちください。');
@@ -136,7 +143,7 @@ const stops = ['menu', 'stock', 'settings/shipping', 'settings/payment'].map(pat
   else state.payment = { ...DEFAULT_PAYMENT, ...value };
   draw();
 }, error => message(error.message, true)));
-addEventListener('pagehide', () => stops.forEach(stop => stop()), { once: true });
+addEventListener('pagehide', () => { stops.forEach(stop => stop()); receiptStop?.(); }, { once: true });
 addEventListener('focus', () => { if (state.receipt && configured) attempt(refreshReceipt); });
 const hashParams = new URLSearchParams(location.hash.slice(1));
 if (hashParams.has('pay')) attempt(async () => {
