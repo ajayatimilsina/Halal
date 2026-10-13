@@ -1,0 +1,16 @@
+{
+  "rules": {
+    ".read": false, ".write": false,
+    "menu": { ".read": true },
+    "menuRevision": { ".read": "auth != null && auth.uid === 'OWNER_UID_NOT_CONFIGURED'" },
+    "stock": { ".read": true },
+    "settings": {
+      "shipping": { ".read": true },
+      "payment": { ".read": true }
+    },
+    "orders": {
+      ".read": "auth != null && auth.uid === 'OWNER_UID_NOT_CONFIGURED'",
+      ".indexOn": ["t", "status"]
+    }
+  }
+}

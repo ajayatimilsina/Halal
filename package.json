@@ -1,0 +1,5 @@
+{
+  "name": "halal-grocery", "private": true, "type": "module",
+  "scripts": { "test": "node --test tests/domain.test.mjs", "test:integration": "node --test tests/integration.test.mjs", "test:browser": "playwright test", "test:browser:live": "playwright test --config playwright.live.config.js", "serve": "http-server . -a 127.0.0.1 -p 8080 -c-1" },
+  "devDependencies": { "@firebase/rules-unit-testing": "^4.0.1", "@playwright/test": "^1.55.0", "firebase": "^11.10.0", "firebase-tools": "^14.0.0", "http-server": "^14.1.1" }
+}
