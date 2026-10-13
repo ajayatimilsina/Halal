@@ -1,4 +1,6 @@
 import { configured, SHOP_NAME } from './firebase-sync.js';
+import { html, t, getLanguage, setLanguage, translateDocument } from './i18n.js';
+export { html, text, t } from './i18n.js';
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 export const storage = {
   get(key, fallback = null, session = false) { try { return JSON.parse((session ? sessionStorage : localStorage).getItem(key)) ?? fallback; } catch { return fallback; } },
@@ -7,7 +9,8 @@ export const storage = {
 };
 export function message(text, error = false) {
   const element = document.querySelector('#message');
-  element.textContent = text;
+  element.dataset.messageSource = text;
+  element.textContent = t(text);
   element.classList.toggle('error', error);
   element.hidden = !text;
 }
@@ -44,7 +47,7 @@ export async function copy(text) {
   try { await navigator.clipboard.writeText(text); message('住所をコピーしました。'); }
   catch { const input = document.createElement('textarea'); input.value = text; document.body.append(input); input.select(); document.execCommand('copy'); input.remove(); message('住所をコピーしました。'); }
 }
-export function icons() { globalThis.lucide?.createIcons(); }
+export function icons() { globalThis.lucide?.createIcons(); translateDocument(); }
 export function preserveFocus(render) {
   const active = document.activeElement;
   let selector = '';
@@ -57,13 +60,18 @@ export function preserveFocus(render) {
 }
 export function mountShell(title, staff = false) {
   const pages = [['customer', '買い物'], ['menu', '商品'], ['inventory', '棚卸'], ['orders', '注文'], ['shipping', '出荷'], ['payment', '支払い設定']];
-  document.querySelector('#shell').innerHTML = `<header class="site-header"><a class="brand" href="./index.html"><span class="brand-mark">H</span><span>${escapeHtml(SHOP_NAME)}<small>HALAL GROCERY · JAPAN</small></span></a><button id="theme" class="icon-button" title="表示テーマを切り替え" aria-label="表示テーマを切り替え"><i data-lucide="sun-moon"></i></button>${staff ? '<button id="logout" class="icon-button" title="ログアウト" aria-label="ログアウト"><i data-lucide="log-out"></i></button>' : ''}</header><nav aria-label="ページ">${pages.map(([path, label]) => `<a ${location.pathname.endsWith(path + '.html') ? 'aria-current="page"' : ''} href="./${path}.html${location.search}">${label}</a>`).join('')}</nav><div class="page-title"><div><span class="eyebrow">${staff ? 'STORE OPERATIONS' : 'WELCOME / ようこそ'}</span><h1>${escapeHtml(title)}</h1></div><span class="mode-tag">${configured ? 'LIVE' : 'プレビュー・注文不可'}</span></div><p id="message" role="status" aria-live="polite" hidden></p>`;
+  document.querySelector('#shell').innerHTML = html`<header class="site-header"><a class="brand" href="./index.html"><span class="brand-mark">H</span><span>${SHOP_NAME === 'ハラール食料品店' ? html('ハラール食料品店') : escapeHtml(SHOP_NAME)}<small>HALAL GROCERY · JAPAN</small></span></a><label class="language-control"><i data-lucide="languages"></i><select id="language" aria-label="表示言語"><option value="ja">日本語</option><option value="en">English</option></select></label><button id="theme" class="icon-button" title="表示テーマを切り替え" aria-label="表示テーマを切り替え"><i data-lucide="sun-moon"></i></button>${staff ? html('<button id="logout" class="icon-button" title="ログアウト" aria-label="ログアウト"><i data-lucide="log-out"></i></button>') : ''}</header><nav aria-label="ページ">${pages.map(([path, label]) => html`<a ${location.pathname.endsWith(path + '.html') ? 'aria-current="page"' : ''} href="./${path}.html${location.search}">${html(label)}</a>`).join('')}</nav><div class="page-title"><div><span class="eyebrow">${staff ? 'STORE OPERATIONS' : html('WELCOME / ようこそ')}</span><h1>${html(escapeHtml(title))}</h1></div><span class="mode-tag">${configured ? 'LIVE' : html('プレビュー・注文不可')}</span></div><p id="message" role="status" aria-live="polite" hidden></p>`;
+  document.querySelector('#language').value = getLanguage();
+  document.querySelector('#language').onchange = event => setLanguage(event.target.value);
+  document.title = `${t(title)} | Halal Grocery`;
+  const footer = document.querySelector('footer'); if (footer) footer.innerHTML = html(footer.innerHTML);
+  document.addEventListener('languagechange', () => { document.title = `${t(title)} | Halal Grocery`; const element = document.querySelector('#message'); if (element?.dataset.messageSource) element.textContent = t(element.dataset.messageSource); });
   const theme = storage.get('theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = theme;
   document.querySelector('#theme').onclick = () => { const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; storage.set('theme', next); };
   icons();
 }
-export const dateText = value => value ? new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
-export const paymentLabels = { unpaid: '未払い', reported: '支払い報告あり', paid: '支払い確認済み' };
-export const statusLabels = { new: '新規', packing: '梱包中', shipped: '出荷済み', done: '完了' };
+export const dateText = value => value ? new Intl.DateTimeFormat(getLanguage() === 'en' ? 'en-US' : 'ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
+export const paymentLabels = new Proxy({ unpaid: '未払い', reported: '支払い報告あり', paid: '支払い確認済み' }, { get: (labels, key) => t(labels[key]) });
+export const statusLabels = new Proxy({ new: '新規', packing: '梱包中', shipped: '出荷済み', done: '完了' }, { get: (labels, key) => t(labels[key]) });
 export const randomToken = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');

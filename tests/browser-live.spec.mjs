@@ -64,6 +64,12 @@ test('customer checkout, payment QR, reporting and staff paid-only shipping', as
   await ownerPage.getByRole('button', { name: '出荷済み', exact: true }).click();
   await expect(ownerPage.locator('.order')).toHaveCount(0);
   await page.getByRole('button', { name: '支払い状況を更新' }).click(); await expect(page.locator('#reported')).toHaveText('支払い確認済み');
+  await page.locator('#language').selectOption('en');
+  await expect(page.locator('#reported')).toHaveText('Payment confirmed');
+  await expect(page.locator('#payment-view')).toContainText('Nagoya delivery');
+  await expect(page.getByRole('link', { name: 'Open PayPay' })).toBeVisible();
+  await expect(page.locator('#payment-view')).toContainText('Include order #');
+  await page.screenshot({ path: 'test-results/english-payment-mobile.png', fullPage: true });
   await ownerContext.close(); expect(errors).toEqual([]);
 });
 test('menu draft/cancel/save, inventory and approved PayPal QR settings', async ({ page }) => {
@@ -92,4 +98,33 @@ test('menu draft/cancel/save, inventory and approved PayPal QR settings', async 
   await page.getByRole('button', { name: '支払い設定を保存' }).click(); await expect(page.locator('#message')).toHaveText('支払い設定を保存しました。');
   await page.screenshot({ path: 'test-results/payment-settings-mobile.png', fullPage: true });
   await page.goto('/customer.html?emulator=1'); await expect(page.locator('#paypal-option')).toBeEnabled();
+});
+test('English staff views preserve unsaved drafts, values and dark mode', async ({ page }) => {
+  await staff(page, 'menu');
+  await page.locator('[data-field=n]:not([data-option-index])').fill('欠品 カート custom product');
+  await page.locator('#language').selectOption('en');
+  await expect(page.getByRole('heading', { name: 'Menu manager', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Product name', { exact: true })).toHaveValue('欠品 カート custom product');
+  await expect(page.locator('#draft-status')).toHaveText('Unsaved draft');
+  await page.locator('#language').selectOption('ja');
+  await expect(page.locator('[data-field=n]:not([data-option-index])')).toHaveValue('欠品 カート custom product');
+  await page.locator('#language').selectOption('en');
+  page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByLabel('Product name', { exact: true })).toHaveValue('Mutton meat');
+  for (const [route, title, label] of [['inventory', 'Inventory', 'Confirm count'], ['shipping', 'Shipping', 'Save delivery rules'], ['payment', 'Payment settings', 'Save payment settings'], ['orders', 'Orders', 'Enable new-order sound']]) {
+    await page.goto(`/${route}.html?emulator=1`);
+    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: label, exact: true }).first()).toBeVisible();
+    if (route === 'shipping') {
+      await page.getByLabel('Nagoya address keywords (one per line)').fill('名古屋市\nNagoya City');
+      await page.locator('#language').selectOption('ja');
+      await expect(page.locator('[name=addressTerms]')).toHaveValue('名古屋市\nNagoya City');
+      await page.locator('#language').selectOption('en');
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    }
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; localStorage.setItem('theme', JSON.stringify('dark')); });
+    await page.screenshot({ path: `test-results/english-${route === 'payment' ? 'payment-settings' : route}-mobile.png`, fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  }
 });

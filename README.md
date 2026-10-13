@@ -16,6 +16,10 @@ Japanese-first, responsive HTML/CSS/vanilla JS. No frontend framework or build s
 
 Staff pages use Google sign-in only, restricted to the configured owner UID. The old `1234` password gate is removed. Firebase Authentication and database rules, not browser session flags, authorize access.
 
+## Language and Theme
+
+Choose **日本語** or **English** in the header. The selected language persists across pages and reloads; `?lang=en` / `?lang=ja` also works. The existing light/dark toggle remains independent of language. Switching languages preserves the cart, checkout fields, product drafts and settings input. Product/category/option names and customer addresses/notes remain as entered; only interface labels, status displays, dialogs and known errors are translated. Database status/shipping values and yen amounts do not change. Browser-generated validation and third-party Firebase messages may follow the browser/provider language.
+
 ## Quick Preview
 
 Node is needed only for local tools/tests; customers use ordinary browser JavaScript. Local tests were run on Node 24.
