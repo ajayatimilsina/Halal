@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/firebase-sync.js', async route => {
+    const response = await route.fetch();
+    const source = await response.text();
+    await route.fulfill({ response, body: source.replace('export const configured = Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.appId) || emulator;', 'export const configured = false;') });
+  });
+});
+
 for (const width of [360, 1440]) {
   test(`catalogue, cart, themes and preview protection at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

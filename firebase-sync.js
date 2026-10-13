@@ -1,6 +1,15 @@
 import { DEFAULT_PAYMENT, DEFAULT_SHIPPING } from './shop-domain.js';
 
-export const FIREBASE_CONFIG = { apiKey: '', authDomain: 'kiranahibino.firebaseapp.com', projectId: 'kiranahibino', databaseURL: 'https://kiranahibino-default-rtdb.firebaseio.com/', appId: '' };
+export const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAw5fh-mNu72irHOszXTpXmXzaHWeSXG3E',
+  authDomain: 'kiranahibino.firebaseapp.com',
+  databaseURL: 'https://kiranahibino-default-rtdb.firebaseio.com',
+  projectId: 'kiranahibino',
+  storageBucket: 'kiranahibino.firebasestorage.app',
+  messagingSenderId: '59402858023',
+  appId: '1:59402858023:web:678654a369c891a34a2802',
+  measurementId: 'G-W2KBY6L01H'
+};
 export const OWNER_UID = 'OWNER_UID_NOT_CONFIGURED';
 export const EMAILJS = { serviceId: '', templateId: '', publicKey: '', ownerEmail: 'ajayatimilsina1@gmail.com' };
 export const APP_CHECK_SITE_KEY = '';
