@@ -68,7 +68,7 @@
           ".validate": "newData.hasChildren(['area','fee','mode'])",
           "fee": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000 && newData.val() % 1 === 0" },
           "area": { ".validate": "newData.isString() && newData.val().length <= 100" },
-          "mode": { ".validate": "newData.val() === '着払い' || newData.val() === '送料無料' || newData.val() === '名古屋配達'" }
+          "mode": { ".validate": "newData.val() === '着払い' || newData.val() === '送料無料,' || newData.val() === '名古屋配達'" }
         },
         "payment": {
           ".validate": "newData.hasChildren(['method','status','instructions'])",
